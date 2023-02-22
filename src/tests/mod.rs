@@ -1,4 +1,5 @@
-mod utils;
+#[cfg(test)]
+mod kv;
 
 #[cfg(test)]
-mod simple;
+mod utils;

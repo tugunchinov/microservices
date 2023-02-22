@@ -6,40 +6,62 @@ pub struct KeyValueStorage<K, V> {
     phantom_value: PhantomData<V>,
 }
 
+pub struct KeyIterator<'a, K> {
+    _phantom_data: &'a PhantomData<K>,
+}
+
 impl<K, V> KeyValueStorage<K, V> {
-    pub fn new(p: PathBuf) -> Result<Self> {
-        todo!()
+    pub fn new(_p: PathBuf) -> Result<Self> {
+        Ok(Self {
+            phantom_key: PhantomData::default(),
+            phantom_value: PhantomData::default(),
+        })
     }
 
-    pub fn read(&self, key: &K) -> Result<Option<K>> {
-        todo!()
+    pub fn read(&self, _key: &K) -> Result<Option<V>> {
+        unimplemented!()
     }
 
-    pub fn exists(&self, key: &K) -> Result<bool> {
-        todo!()
+    pub fn exists(&self, _key: &K) -> Result<bool> {
+        unimplemented!()
     }
 
-    pub fn write(&mut self, key: &K, value: V) -> Result<()> {
-        todo!()
+    pub fn write(&mut self, _key: &K, _value: V) -> Result<()> {
+        unimplemented!()
     }
 
-    pub fn delete(&mut self, key: &K) -> Result<()> {
-        todo!()
+    pub fn delete(&mut self, _key: &K) -> Result<()> {
+        unimplemented!()
     }
 
-    // TODO: iter
+    pub fn read_keys(&self) -> KeyIterator<K> {
+        unimplemented!()
+    }
 
     pub fn size(&self) -> usize {
-        todo!()
+        unimplemented!()
     }
 
     pub fn flush(&mut self) -> Result<()> {
-        todo!()
+        unimplemented!()
     }
 
-    // TODO: close
-
     pub fn close(&mut self) -> Result<()> {
-        todo!()
+        unimplemented!()
+    }
+}
+
+// TODO:
+// impl<K, V> Drop for KeyValueStorage<K, V> {
+//     fn drop(&mut self) {
+//         self.close().unwrap()
+//     }
+// }
+
+impl<'a, K> Iterator for KeyIterator<'a, K> {
+    type Item = &'a K;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        unimplemented!()
     }
 }
