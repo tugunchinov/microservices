@@ -11,14 +11,14 @@ use super::{KEY_1, KEY_2, VALUE_1, VALUE_2};
 fn test_read_write() {
     test_env::do_in_temp_directory(|path| {
         do_with_strings(path, |mut storage| {
-            storage.write(&"foo".to_string(), "bar".to_string())?;
+            storage.write("foo".to_string(), "bar".to_string())?;
             assert_eq!(
                 "bar".to_string(),
-                storage.read(&"foo".to_string())?.unwrap()
+                *storage.read(&"foo".to_string())?.unwrap()
             );
             assert_eq!(1, storage.size());
 
-            assert_fully_match(storage.read_keys(), &[&"foo".to_string()])
+            assert_fully_match(storage.read_keys().unwrap(), &[&"foo".to_string()])
         })
     })
     .ok();
@@ -28,13 +28,13 @@ fn test_read_write() {
 fn test_persistence() {
     test_env::do_in_temp_directory(|path| {
         do_with_pojo(path.clone(), |mut storage| {
-            storage.write(&KEY_1, VALUE_1.clone())
+            storage.write(KEY_1.clone(), VALUE_1.clone()).map(|_| {})
         })
         .ok();
         do_with_pojo(path, |storage| {
-            assert_eq!(VALUE_1, storage.read(&KEY_1)?.unwrap());
+            assert_eq!(*VALUE_1, *storage.read(&KEY_1)?.unwrap());
             assert_eq!(1, storage.size());
-            assert_fully_match(storage.read_keys(), &[&KEY_1])
+            assert_fully_match(storage.read_keys().unwrap(), &[&*KEY_1])
         })
     })
     .ok();
@@ -52,11 +52,11 @@ fn test_persistence() {
 fn test_missing_key() {
     test_env::do_in_temp_directory(|path| {
         do_with_numbers(path, |mut storage| {
-            storage.write(&4, 3.0)?;
-            assert_eq!(storage.read(&4)?.unwrap(), 3.0);
+            storage.write(4, 3.0)?;
+            assert_eq!(*storage.read(&4)?.unwrap(), 3.0);
             assert_eq!(storage.read(&5)?, None);
             assert_eq!(1, storage.size());
-            assert_fully_match(storage.read_keys(), &[&4])
+            assert_fully_match(storage.read_keys()?, &[&4])
         })
     })
     .ok();
@@ -66,25 +66,25 @@ fn test_missing_key() {
 fn test_multiple_modifications() {
     do_in_temp_directory(|path| {
         do_with_strings(path.clone(), |mut storage| {
-            storage.write(&"foo".to_string(), "bar".to_string())?;
-            storage.write(&"bar".to_string(), "foo".to_string())?;
-            storage.write(&"yammy".to_string(), "nooo".to_string())?;
+            storage.write("foo".to_string(), "bar".to_string())?;
+            storage.write("bar".to_string(), "foo".to_string())?;
+            storage.write("yammy".to_string(), "nooo".to_string())?;
             assert_eq!(
                 "bar".to_string(),
-                storage.read(&"foo".to_string())?.unwrap()
+                *storage.read(&"foo".to_string())?.unwrap()
             );
             assert_eq!(
                 "foo".to_string(),
-                storage.read(&"bar".to_string())?.unwrap()
+                *storage.read(&"bar".to_string())?.unwrap()
             );
             assert_eq!(
                 "nooo".to_string(),
-                storage.read(&"yammy".to_string())?.unwrap()
+                *storage.read(&"yammy".to_string())?.unwrap()
             );
             assert!(storage.exists(&"foo".to_string())?);
             assert_eq!(3, storage.size());
             assert_fully_match(
-                storage.read_keys(),
+                storage.read_keys().unwrap(),
                 &[&"bar".to_string(), &"foo".to_string(), &"yammy".to_string()],
             )
         })
@@ -93,21 +93,21 @@ fn test_multiple_modifications() {
         do_with_strings(path.clone(), |storage| {
             assert_eq!(
                 "bar".to_string(),
-                storage.read(&"foo".to_string())?.unwrap()
+                *storage.read(&"foo".to_string())?.unwrap()
             );
             assert_eq!(
                 "foo".to_string(),
-                storage.read(&"bar".to_string())?.unwrap()
+                *storage.read(&"bar".to_string())?.unwrap()
             );
             assert_eq!(
                 "nooo".to_string(),
-                storage.read(&"yammy".to_string())?.unwrap()
+                *storage.read(&"yammy".to_string())?.unwrap()
             );
             assert!(storage.exists(&"bar".to_string())?);
             assert!(!storage.exists(&"yep".to_string())?);
             assert_eq!(3, storage.size());
             assert_fully_match(
-                storage.read_keys(),
+                storage.read_keys().unwrap(),
                 &[&"bar".to_string(), &"foo".to_string(), &"yammy".to_string()],
             )
         })
@@ -115,12 +115,12 @@ fn test_multiple_modifications() {
 
         do_with_strings(path.clone(), |mut storage| {
             storage.delete(&"bar".to_string())?;
-            storage.write(&"yammy".to_string(), "yeahs".to_string())?;
+            storage.write("yammy".to_string(), "yeahs".to_string())?;
             assert!(!storage.exists(&"bar".to_string())?);
             assert!(!storage.exists(&"yep".to_string())?);
             assert_eq!(2, storage.size());
             assert_fully_match(
-                storage.read_keys(),
+                storage.read_keys().unwrap(),
                 &[&"foo".to_string(), &"yammy".to_string()],
             )
         })
@@ -129,16 +129,16 @@ fn test_multiple_modifications() {
         do_with_strings(path.clone(), |storage| {
             assert_eq!(
                 "bar".to_string(),
-                storage.read(&"foo".to_string())?.unwrap()
+                *storage.read(&"foo".to_string())?.unwrap()
             );
             assert_eq!(storage.read(&"bar".to_string())?, None);
             assert_eq!(
                 "yeahs".to_string(),
-                storage.read(&"yammy".to_string())?.unwrap()
+                *storage.read(&"yammy".to_string())?.unwrap()
             );
             assert_eq!(2, storage.size());
             assert_fully_match(
-                storage.read_keys(),
+                storage.read_keys().unwrap(),
                 &[&"foo".to_string(), &"yammy".to_string()],
             )
         })
@@ -150,20 +150,21 @@ fn test_multiple_modifications() {
 fn test_persist_and_copy() {
     do_in_temp_directory(|path1| {
         do_with_pojo(path1.clone(), |mut storage| {
-            storage.write(&KEY_1, VALUE_1.clone())?;
-            storage.write(&KEY_2, VALUE_2.clone())
+            storage.write(KEY_1.clone(), VALUE_1.clone())?;
+            storage.write(KEY_2.clone(), VALUE_2.clone()).map(|_| {})
         })
         .ok();
 
-        do_in_temp_directory(|mut path2| {
+        do_in_temp_directory(|path2| {
+            let mut path2 = path2.to_path_buf();
             path2.push(Path::new("trololo"));
             fs_extra::dir::copy(&path1, &path2, &CopyOptions::new())?;
 
-            do_with_pojo(path2, |storage| {
-                assert_eq!(VALUE_1, storage.read(&KEY_1)?.unwrap());
-                assert_eq!(VALUE_2, storage.read(&KEY_2)?.unwrap());
+            do_with_pojo(&path2, |storage| {
+                assert_eq!(*VALUE_1, *storage.read(&KEY_1)?.unwrap());
+                assert_eq!(*VALUE_2, *storage.read(&KEY_2)?.unwrap());
                 assert_eq!(2, storage.size());
-                assert_fully_match(storage.read_keys(), &[&KEY_1, &KEY_2])
+                assert_fully_match(storage.read_keys().unwrap(), &[&*KEY_1, &*KEY_2])
             })
         })
     })

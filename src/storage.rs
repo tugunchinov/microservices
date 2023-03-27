@@ -1,67 +1,121 @@
-use anyhow::Result;
-use std::{marker::PhantomData, path::PathBuf};
+use anyhow::{anyhow, bail, Result};
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::HashMap,
+    fs::File,
+    hash::Hash,
+    path::{Path, PathBuf},
+};
 
-pub struct KeyValueStorage<K, V> {
-    phantom_key: PhantomData<K>,
-    phantom_value: PhantomData<V>,
+enum StorageState {
+    Opened,
+    Closed,
 }
 
-pub struct KeyIterator<'a, K> {
-    _phantom_data: &'a PhantomData<K>,
+pub struct KeyValueStorage<K: Eq + Hash + Serialize, V: Serialize> {
+    persistent_storage_path: PathBuf,
+    storage: HashMap<K, V>,
+    state: StorageState,
 }
 
-impl<K, V> KeyValueStorage<K, V> {
-    pub fn new(_p: PathBuf) -> Result<Self> {
+const PERSISTENT_STORAGE_FILE_NAME: &str = "db";
+
+impl<K: Eq + Hash + Serialize, V: Serialize> KeyValueStorage<K, V> {
+    pub fn new<'de>(path: &Path) -> Result<Self>
+    where
+        K: Deserialize<'de>,
+        V: Deserialize<'de>,
+    {
+        let mut persistent_storage_path = path.to_path_buf();
+        persistent_storage_path.push(PERSISTENT_STORAGE_FILE_NAME);
+
+        let storage = if persistent_storage_path.exists() {
+            let mut deserializer = rmp_serde::Deserializer::new(
+                File::options().read(true).open(&persistent_storage_path)?,
+            );
+
+            HashMap::deserialize(&mut deserializer)?
+        } else {
+            HashMap::new()
+        };
+
         Ok(Self {
-            phantom_key: PhantomData::default(),
-            phantom_value: PhantomData::default(),
+            persistent_storage_path,
+            storage,
+            state: StorageState::Opened,
         })
     }
 
-    pub fn read(&self, _key: &K) -> Result<Option<V>> {
-        unimplemented!()
+    pub fn read(&self, key: &K) -> Result<Option<&V>> {
+        match self.state {
+            StorageState::Opened => Ok(self.storage.get(key)),
+            StorageState::Closed => {
+                bail!("An attempt to accesss closed storage!")
+            }
+        }
     }
 
-    pub fn exists(&self, _key: &K) -> Result<bool> {
-        unimplemented!()
+    pub fn exists(&self, key: &K) -> Result<bool> {
+        match self.state {
+            StorageState::Opened => Ok(self.storage.contains_key(key)),
+            StorageState::Closed => {
+                bail!("An attempt to accesss closed storage!")
+            }
+        }
     }
 
-    pub fn write(&mut self, _key: &K, _value: V) -> Result<()> {
-        unimplemented!()
+    pub fn write(&mut self, key: K, value: V) -> Result<Option<V>> {
+        match self.state {
+            StorageState::Opened => Ok(self.storage.insert(key, value)),
+            StorageState::Closed => {
+                bail!("An attempt to accesss closed storage!")
+            }
+        }
     }
 
-    pub fn delete(&mut self, _key: &K) -> Result<()> {
-        unimplemented!()
+    pub fn delete(&mut self, key: &K) -> Result<Option<V>> {
+        match self.state {
+            StorageState::Opened => Ok(self.storage.remove(key)),
+            StorageState::Closed => {
+                bail!("An attempt to accesss closed storage!")
+            }
+        }
     }
 
-    pub fn read_keys(&self) -> KeyIterator<K> {
-        unimplemented!()
+    pub fn read_keys(&self) -> Result<impl Iterator<Item = &K>> {
+        match self.state {
+            StorageState::Opened => Ok(self.storage.keys()),
+            StorageState::Closed => {
+                bail!("An attempt to accesss closed storage!")
+            }
+        }
     }
 
     pub fn size(&self) -> usize {
-        unimplemented!()
+        self.storage.len()
     }
 
     pub fn flush(&mut self) -> Result<()> {
-        unimplemented!()
+        let mut serializer = rmp_serde::Serializer::new(
+            File::options()
+                .write(true)
+                .create(true)
+                .open(&self.persistent_storage_path)?,
+        );
+        self.storage
+            .serialize(&mut serializer)
+            .map_err(|e| anyhow!(e))
     }
 
     pub fn close(&mut self) -> Result<()> {
-        unimplemented!()
+        self.state = StorageState::Closed;
+
+        self.flush()
     }
 }
 
-// TODO:
-// impl<K, V> Drop for KeyValueStorage<K, V> {
-//     fn drop(&mut self) {
-//         self.close().unwrap()
-//     }
-// }
-
-impl<'a, K> Iterator for KeyIterator<'a, K> {
-    type Item = &'a K;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        unimplemented!()
+impl<K: Eq + Hash + Serialize, V: Serialize> Drop for KeyValueStorage<K, V> {
+    fn drop(&mut self) {
+        self.close().unwrap()
     }
 }

@@ -1,6 +1,7 @@
 use crate::storage::KeyValueStorage;
 use anyhow::{bail, Result};
-use std::path::PathBuf;
+use serde::Serialize;
+use std::{hash::Hash, path::Path};
 use tempdir::TempDir;
 
 use super::{
@@ -10,13 +11,15 @@ use super::{
 
 pub fn do_in_temp_directory<F, E>(callback: F) -> Result<E>
 where
-    F: FnOnce(PathBuf) -> Result<E>,
+    F: FnOnce(&Path) -> Result<E>,
 {
     const PATH: &str = "test_task_2";
 
     let tmp_dir = TempDir::new(PATH)?;
 
-    let callback_res = callback(tmp_dir.path().to_owned());
+    println!("temp path: {}", tmp_dir.path().display());
+
+    let callback_res = callback(tmp_dir.path());
 
     callback_res
 }
@@ -36,10 +39,14 @@ where
     }
 }
 
-pub fn storage_callback<K, V, F, B>(path: PathBuf, callback: F, builder: B) -> Result<()>
+pub fn storage_callback<K: Eq + Hash + Serialize, V: Serialize, F, B>(
+    path: &Path,
+    callback: F,
+    builder: B,
+) -> Result<()>
 where
     F: FnOnce(KeyValueStorage<K, V>) -> Result<()>,
-    B: FnOnce(PathBuf) -> KeyValueStorage<K, V>,
+    B: FnOnce(&Path) -> KeyValueStorage<K, V>,
 {
     let storage = builder(path);
 
@@ -48,21 +55,21 @@ where
     Ok(())
 }
 
-pub fn do_with_strings<F>(path: PathBuf, callback: F) -> Result<()>
+pub fn do_with_strings<F>(path: &Path, callback: F) -> Result<()>
 where
     F: FnOnce(KeyValueStorage<String, String>) -> Result<()>,
 {
     storage_callback(path, callback, build_strings_storage)
 }
 
-pub fn do_with_numbers<F>(path: PathBuf, callback: F) -> Result<()>
+pub fn do_with_numbers<F>(path: &Path, callback: F) -> Result<()>
 where
     F: FnOnce(KeyValueStorage<i32, f64>) -> Result<()>,
 {
     storage_callback(path, callback, build_numbers_storage)
 }
 
-pub fn do_with_pojo<F>(path: PathBuf, callback: F) -> Result<()>
+pub fn do_with_pojo<F>(path: &Path, callback: F) -> Result<()>
 where
     F: FnOnce(KeyValueStorage<StudentKey, Student>) -> Result<()>,
 {
