@@ -1,0 +1,5 @@
+group_id="kv-client"
+topic="task2"
+brokers="localhost:9092"
+partitions=8
+offset_reset="beginning"

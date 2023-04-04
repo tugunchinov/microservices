@@ -1,6 +1,14 @@
-use lazy_static::lazy_static;
-
 use crate::tests::utils::types::{Date, Student, StudentKey};
+use lazy_static::lazy_static;
+use std::sync::Once;
+
+static INIT: Once = Once::new();
+
+fn setup() {
+    INIT.call_once(|| {
+        env_logger::init();
+    });
+}
 
 #[cfg(test)]
 mod simple;

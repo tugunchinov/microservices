@@ -1,10 +1,16 @@
 use anyhow::{anyhow, bail, Result};
-use serde::{Deserialize, Serialize};
+use rdkafka::Message;
+use serde::{de::DeserializeOwned, Serialize};
 use std::{
     collections::HashMap,
-    fs::File,
     hash::Hash,
-    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use crate::kafka::{
+    config::KafkaConfig,
+    consumer::KafkaConsumer,
+    producer::{KafkaMsgToSend, KafkaProducer},
 };
 
 enum StorageState {
@@ -13,34 +19,36 @@ enum StorageState {
 }
 
 pub struct KeyValueStorage<K: Eq + Hash + Serialize, V: Serialize> {
-    persistent_storage_path: PathBuf,
+    config: KafkaConfig,
     storage: HashMap<K, V>,
     state: StorageState,
 }
 
-const PERSISTENT_STORAGE_FILE_NAME: &str = "db";
-
 impl<K: Eq + Hash + Serialize, V: Serialize> KeyValueStorage<K, V> {
-    pub fn new<'de>(path: &Path) -> Result<Self>
+    pub async fn new(config: KafkaConfig) -> Result<Self>
     where
-        K: Deserialize<'de>,
-        V: Deserialize<'de>,
+        K: DeserializeOwned,
+        V: DeserializeOwned,
     {
-        let mut persistent_storage_path = path.to_path_buf();
-        persistent_storage_path.push(PERSISTENT_STORAGE_FILE_NAME);
+        let consumer = KafkaConsumer::new(config.clone()).map_err(|e| anyhow!(e))?;
 
-        let storage = if persistent_storage_path.exists() {
-            let mut deserializer = rmp_serde::Deserializer::new(
-                File::options().read(true).open(&persistent_storage_path)?,
-            );
+        let storage = if consumer.is_empty()? {
+            log::info!("Saved storage is empty");
 
-            HashMap::deserialize(&mut deserializer)?
-        } else {
             HashMap::new()
+        } else {
+            log::info!("Reading state from Kafka...");
+            let msg = consumer.read_msg().await?.detach();
+
+            log::info!("Decoding message...");
+            let Some(payload) = msg.payload() else { bail!("No payload in message") };
+            let kv_vec: Vec<(K, V)> = serde_json::from_slice(payload)?;
+
+            kv_vec.into_iter().collect()
         };
 
         Ok(Self {
-            persistent_storage_path,
+            config,
             storage,
             state: StorageState::Opened,
         })
@@ -95,27 +103,41 @@ impl<K: Eq + Hash + Serialize, V: Serialize> KeyValueStorage<K, V> {
         self.storage.len()
     }
 
-    pub fn flush(&mut self) -> Result<()> {
-        let mut serializer = rmp_serde::Serializer::new(
-            File::options()
-                .write(true)
-                .create(true)
-                .open(&self.persistent_storage_path)?,
-        );
-        self.storage
-            .serialize(&mut serializer)
-            .map_err(|e| anyhow!(e))
+    pub async fn flush(&mut self) -> Result<()> {
+        if self.storage.is_empty() {
+            return Ok(());
+        }
+
+        log::info!("Flushing storage state to Kafka...");
+
+        let producer = KafkaProducer::new(self.config.clone())?;
+
+        log::info!("Serializing...");
+        let key =
+            serde_json::to_string(&SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis())?;
+        let kv_vec: Vec<(&K, &V)> = self.storage.iter().collect();
+        let value = serde_json::to_string(&kv_vec)?;
+
+        log::info!("Sending message...");
+        producer
+            .send_message(&KafkaMsgToSend { key, value })
+            .await
+            .map_err(|(e, _)| anyhow!(e))?;
+
+        Ok(())
     }
 
-    pub fn close(&mut self) -> Result<()> {
+    pub async fn close(&mut self) -> Result<()> {
+        log::info!("Closing storage...");
+
         self.state = StorageState::Closed;
 
-        self.flush()
+        self.flush().await
     }
 }
 
 impl<K: Eq + Hash + Serialize, V: Serialize> Drop for KeyValueStorage<K, V> {
     fn drop(&mut self) {
-        self.close().unwrap()
+        futures::executor::block_on(self.close()).unwrap();
     }
 }
