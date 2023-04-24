@@ -273,7 +273,6 @@ async fn test_persist_and_copy() {
             let mut kcat_ps2 = Command::new("kcat")
                 .args(["-b", &config2.brokers, "-P", "-t", &config2.topic, "-K:"])
                 .stdin(Stdio::from(kcat_ps1.stdout.unwrap()))
-                .stdout(Stdio::piped())
                 .spawn()
                 .unwrap();
 

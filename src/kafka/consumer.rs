@@ -37,10 +37,6 @@ impl KafkaConsumer {
         tpl.add_partition_offset(&self.topic_name, partition, rdkafka::Offset::Offset(offset))?;
 
         Ok(self.consumer.assign(&tpl)?)
-
-        // Ok(self
-        //     .consumer
-        //     .store_offset(&self.topic_name, partition, offset)?)
     }
 
     pub fn is_empty(&self) -> Result<bool> {
