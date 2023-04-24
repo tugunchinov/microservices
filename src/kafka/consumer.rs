@@ -25,17 +25,22 @@ impl KafkaConsumer {
 
         consumer.subscribe(&[&topic_name]).map_err(|e| anyhow!(e))?;
 
-        // let mut tpl = TopicPartitionList::new();
-        // for i in 0..partitions {
-        //     tpl.add_partition(&topic_name, i);
-        // }
-        // consumer.resume(&tpl)?;
-
         Ok(Self {
             consumer,
             topic_name,
             partitions,
         })
+    }
+
+    pub fn store_offset(&self, partition: i32, offset: i64) -> Result<()> {
+        let mut tpl = TopicPartitionList::new();
+        tpl.add_partition_offset(&self.topic_name, partition, rdkafka::Offset::Offset(offset))?;
+
+        Ok(self.consumer.assign(&tpl)?)
+
+        // Ok(self
+        //     .consumer
+        //     .store_offset(&self.topic_name, partition, offset)?)
     }
 
     pub fn is_empty(&self) -> Result<bool> {

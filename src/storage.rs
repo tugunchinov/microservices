@@ -22,6 +22,7 @@ pub struct KeyValueStorage<K: Eq + Hash + Serialize, V: Serialize> {
     config: KafkaConfig,
     storage: HashMap<K, V>,
     state: StorageState,
+    consumer: KafkaConsumer,
 }
 
 impl<K: Eq + Hash + Serialize, V: Serialize> KeyValueStorage<K, V> {
@@ -41,9 +42,9 @@ impl<K: Eq + Hash + Serialize, V: Serialize> KeyValueStorage<K, V> {
             let msg = consumer.read_msg().await?.detach();
 
             log::info!("Decoding message...");
+
             let Some(payload) = msg.payload() else { bail!("No payload in message") };
             let kv_vec: Vec<(K, V)> = serde_json::from_slice(payload)?;
-
             kv_vec.into_iter().collect()
         };
 
@@ -51,6 +52,7 @@ impl<K: Eq + Hash + Serialize, V: Serialize> KeyValueStorage<K, V> {
             config,
             storage,
             state: StorageState::Opened,
+            consumer,
         })
     }
 
@@ -119,10 +121,12 @@ impl<K: Eq + Hash + Serialize, V: Serialize> KeyValueStorage<K, V> {
         let value = serde_json::to_string(&kv_vec)?;
 
         log::info!("Sending message...");
-        producer
+        let (partition, offset) = producer
             .send_message(&KafkaMsgToSend { key, value })
             .await
             .map_err(|(e, _)| anyhow!(e))?;
+
+        self.consumer.store_offset(partition, offset)?;
 
         Ok(())
     }

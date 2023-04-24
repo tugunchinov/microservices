@@ -1,5 +1,8 @@
 use futures::FutureExt;
-use std::time::Duration;
+use std::{
+    process::{Command, Stdio},
+    time::Duration,
+};
 
 use crate::tests::{
     kv::setup,
@@ -250,8 +253,31 @@ async fn test_persist_and_copy() {
             futures::future::ready(Ok(()))
         });
 
+        let kcat_ps1 = Command::new("kcat")
+            .args([
+                "-b",
+                &config1.brokers,
+                "-C",
+                "-t",
+                &config1.topic,
+                "-K:",
+                "-e",
+                "-o",
+                "beginning",
+            ])
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+
         let f2 = do_in_temp_topic(|config2| {
-            // TODO: MirrorKafka
+            let mut kcat_ps2 = Command::new("kcat")
+                .args(["-b", &config2.brokers, "-P", "-t", &config2.topic, "-K:"])
+                .stdin(Stdio::from(kcat_ps1.stdout.unwrap()))
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap();
+
+            kcat_ps2.wait().unwrap();
 
             do_with_pojo(config2, |storage| {
                 assert_eq!(
